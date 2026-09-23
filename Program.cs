@@ -32,6 +32,11 @@ namespace UsbMonitorETW
                 File.WriteAllText(whitelistPath, "VID_80EE&PID_CAFE\n");
                 Console.WriteLine("[*] Created default whitelist.txt. Add allowed VID_PID combinations here.");
             }
+
+            Console.WriteLine("[*] Starting Kernel-Level USB monitor via ETW...");
+            Console.WriteLine("[*] Press Ctrl+C to stop.\n");
+
+
         }
     }
 }
