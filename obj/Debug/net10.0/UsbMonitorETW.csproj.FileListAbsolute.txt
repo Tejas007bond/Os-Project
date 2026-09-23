@@ -1,0 +1,6 @@
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.csproj.AssemblyReference.cache
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.GeneratedMSBuildEditorConfig.editorconfig
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.AssemblyInfoInputs.cache
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.AssemblyInfo.cs
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.csproj.CoreCompileInputs.cache
+D:\Usb Logger\UsbMonitorETW\UsbMonitorETW\obj\Debug\net10.0\UsbMonitorETW.sourcelink.json
