@@ -137,5 +137,10 @@ namespace UsbMonitorETW
                 Console.WriteLine($"[ERROR] Failed to block device: {ex.Message}");
             }
         }
+
+        static bool IsRunAsAdmin()
+        {
+
+        }
     }
 }
