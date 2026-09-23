@@ -3,121 +3,188 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Text.RegularExpressions;
-using Microsoft.Diagnostics.Tracing.Session;
-using Microsoft.Diagnostics.Tracing;
 
-namespace UsbMonitorETW {
+namespace UsbMonitorWmi {
     class Program {
         // File paths
-        static string logDir = @"C:\ProgramData\UsbMonitor";
-        static string whitelistPath = Path.Combine(logDir, "whitelist.txt");
-        static string eventLogPath = Path.Combine(logDir, "usb_events.txt");
-        static string alertLogPath = Path.Combine(logDir, "usb_alerts.log");
+        static readonly string logDir = @"C:\ProgramData\UsbMonitor";
+        static readonly string whitelistPath = Path.Combine(logDir, "whitelist.txt");
+        static readonly string eventLogPath = Path.Combine(logDir, "usb_events.txt");
+        static readonly string alertLogPath = Path.Combine(logDir, "usb_alerts.log");
 
-        // FIX 1: Capitalized 'Main' (C# is case-sensitive)
+        // Kept alive for the life of the process so the watchers aren't garbage collected
+        static ManagementEventWatcher arrivalWatcher;
+        static ManagementEventWatcher removalWatcher;
+
+        static readonly object logLock = new object();
+
         static void Main(string[] args) {
-            // 1. Ensuring running as administrator (required for ETW and Device Disabling)
+            // 1. Must run elevated: WMI Disable() and some PnP queries require admin rights
             if (!IsRunAsAdmin()) {
                 Console.WriteLine("[-] Error: This program must be run as Administrator.");
-                Console.WriteLine("Please right-click Visual Studio and select 'Run as Administrator'.");
+                Console.WriteLine("Right-click the executable (or Visual Studio) and choose 'Run as Administrator'.");
                 return;
             }
 
-            // 2. Initialize the directories and whitelist
+            // 2. Init directories / whitelist
             Directory.CreateDirectory(logDir);
             if (!File.Exists(whitelistPath)) {
-                File.WriteAllText(whitelistPath, "VID_80EE&PID_CAFE\n");
-                Console.WriteLine("[*] Created default whitelist.txt. Add allowed VID_PID combinations here.");
+                File.WriteAllText(whitelistPath, "VID_80EE&PID_CAFE" + Environment.NewLine);
+                Console.WriteLine("[*] Created default whitelist.txt. Add allowed VID_PID combinations here (one per line).");
             }
 
-            Console.WriteLine("[*] Starting Kernel-Level USB monitor via ETW...");
+            Console.WriteLine("[*] Starting USB monitor via WMI device-change events...");
             Console.WriteLine("[*] Press Ctrl+C to stop.\n");
 
-            // 3. Set up ETW session
-            string sessionName = "UsbKernelMonitorSession";
+            // 3. Subscribe to WMI instance creation/deletion for USB PnP entities.
+            //    This fires on EVERY physical arrival/removal, unlike the ETW
+            //    Kernel-PnP 2003/2004 "driver install" events, which only fire
+            //    the first time Windows needs to install/stage a driver for a
+            //    given hardware ID. Polling interval below is WQL's own
+            //    "WITHIN n" clause (seconds), not a busy loop.
+            try {
+                var arrivalQuery = new WqlEventQuery(
+                    "SELECT * FROM __InstanceCreationEvent WITHIN 1 " +
+                    "WHERE TargetInstance ISA 'Win32_PnPEntity'");
+                arrivalWatcher = new ManagementEventWatcher(arrivalQuery);
+                arrivalWatcher.EventArrived += (s, e) => OnDeviceEvent(e, "ADD");
+                arrivalWatcher.Start();
 
-            // Check for any leftover session which may have crashed
-            if (TraceEventSession.GetActiveSessionNames().Contains(sessionName)) {
-                TraceEventSession.GetActiveSession(sessionName).Stop();
+                var removalQuery = new WqlEventQuery(
+                    "SELECT * FROM __InstanceDeletionEvent WITHIN 1 " +
+                    "WHERE TargetInstance ISA 'Win32_PnPEntity'");
+                removalWatcher = new ManagementEventWatcher(removalQuery);
+                removalWatcher.EventArrived += (s, e) => OnDeviceEvent(e, "REMOVE");
+                removalWatcher.Start();
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[ERROR] Failed to start WMI watchers: {ex.Message}");
+                return;
             }
 
-            using (var session = new TraceEventSession(sessionName)) {
-                // Enable the windows kernel pnp provider
-                session.EnableProvider("Microsoft-Windows-Kernel-PnP");
+            // Block main thread; watchers deliver events on background threads.
+            var exitSignal = new System.Threading.ManualResetEvent(false);
+            Console.CancelKeyPress += (s, e) => {
+                e.Cancel = true;
+                exitSignal.Set();
+            };
+            exitSignal.WaitOne();
 
-                // Subscribe to all dynamic events from this provider
-                session.Source.Dynamic.All += data => {
-                    // FIX 2: Explicitly cast integers to TraceEventID
-                    if (data.ID == (TraceEventID)2003 || data.ID == (TraceEventID)2004) {
-                        string deviceId = data.PayloadByName("DeviceInstanceId") as string;
-                        string description = data.PayloadByName("DeviceDescription") as string;
+            arrivalWatcher?.Stop();
+            removalWatcher?.Stop();
+            Console.WriteLine("[*] Stopped.");
+        }
 
-                        if (!string.IsNullOrEmpty(deviceId)) {
-                            ProcessUsbEvents(deviceId, description, data.ID == (TraceEventID)2003 ? "ADD" : "REMOVE");
-                        }
-                    }
-                };
+        static void OnDeviceEvent(EventArrivedEventArgs e, string action) {
+            try {
+                var target = (ManagementBaseObject)e.NewEvent["TargetInstance"];
 
-                // Start processing events (blocks the main thread)
-                session.Source.Process();
+                string deviceId = target["DeviceID"] as string;
+                string description = target["Description"] as string ?? target["Name"] as string ?? "(unknown)";
+
+                if (string.IsNullOrEmpty(deviceId))
+                    return;
+
+                // Only care about USB devices; Win32_PnPEntity also reports non-USB PnP hardware.
+                if (deviceId.IndexOf("USB", StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                ProcessUsbEvent(deviceId, description, action);
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[ERROR] Failed to process device event: {ex.Message}");
             }
         }
 
-        static void ProcessUsbEvents(string deviceId, string description, string action) {
+        static void ProcessUsbEvent(string deviceId, string description, string action) {
             string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-            // FIX 3: Added missing closing parenthesis ')' in the Regex pattern
             Match match = Regex.Match(deviceId, @"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})");
+            if (!match.Success) {
+                // Not every USB PnP entity (e.g. composite child nodes, hubs) carries VID/PID
+                // in this exact form; log it but don't try to whitelist-match it.
+                LogLine(eventLogPath, $"[{timestamp}] {action} | (no VID/PID) | {description} | ID: {deviceId}");
+                return;
+            }
 
-            if (match.Success) {
-                string vidPid = $"VID_{match.Groups[1].Value.ToUpper()}&PID_{match.Groups[2].Value.ToUpper()}";
-                string logEntry = $"[{timestamp}] {action} | {vidPid} | {description} | ID: {deviceId}";
+            string vidPid = $"VID_{match.Groups[1].Value.ToUpperInvariant()}&PID_{match.Groups[2].Value.ToUpperInvariant()}";
+            string logEntry = $"[{timestamp}] {action} | {vidPid} | {description} | ID: {deviceId}";
 
-                // Log all events
-                File.AppendAllText(eventLogPath, logEntry + Environment.NewLine);
-                Console.WriteLine($"[LOG] {action} detected: {vidPid} ({description})");
+            LogLine(eventLogPath, logEntry);
+            Console.WriteLine($"[LOG] {action} detected: {vidPid} ({description})");
 
-                // Only check whitelist on ADD events
-                if (action == "ADD") {
-                    string[] whitelist = File.ReadAllLines(whitelistPath);
+            if (action != "ADD")
+                return;
 
-                    if (whitelist.Contains(vidPid)) {
-                        Console.WriteLine($"[OK] Allowed: {vidPid} is whitelisted");
-                    }
-                    else {
-                        Console.WriteLine($"[!] ALERT: Unauthorized device {vidPid} detected! Blocking...");
-                        File.AppendAllText(alertLogPath, $"[{timestamp}] BLOCKED: {vidPid} ({description}){Environment.NewLine}");
+            var whitelist = LoadWhitelist();
 
-                        // FIX 4: Changed 'BlockBuilder' to 'BlockDevice'
-                        BlockDevice(deviceId);
-                    }
-                }
+            if (whitelist.Contains(vidPid)) {
+                Console.WriteLine($"[OK] Allowed: {vidPid} is whitelisted");
+                return;
+            }
+
+            Console.WriteLine($"[!] ALERT: Unauthorized device {vidPid} detected! Blocking...");
+            LogLine(alertLogPath, $"[{timestamp}] BLOCKED: {vidPid} ({description}) | ID: {deviceId}");
+
+            BlockDevice(deviceId);
+        }
+
+        static string[] LoadWhitelist() {
+            try {
+                return File.ReadAllLines(whitelistPath)
+                    .Select(l => l.Trim().ToUpperInvariant())
+                    .Where(l => l.Length > 0 && !l.StartsWith("#"))
+                    .ToArray();
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[ERROR] Could not read whitelist: {ex.Message}");
+                return Array.Empty<string>();
             }
         }
 
         static void BlockDevice(string deviceId) {
             try {
-                // Use WMI to find the PnP entity and disable it
-                string query = $"SELECT * FROM Win32_PnPEntity WHERE DeviceID = '{deviceId.Replace("\\", "\\\\")}'";
+                // Escape single quotes too, not just backslashes, since WQL string
+                // literals use ' as the delimiter.
+                string escapedId = deviceId.Replace("\\", "\\\\").Replace("'", "\\'");
+                string query = $"SELECT * FROM Win32_PnPEntity WHERE DeviceID = '{escapedId}'";
+
                 using (var searcher = new ManagementObjectSearcher(query)) {
-                    foreach (ManagementObject device in searcher.Get()) {
-                        // FIX 5: Removed ', null' to use correct method overload
-                        var outParams = device.InvokeMethod("Disable");
+                    var matches = searcher.Get().Cast<ManagementObject>().ToList();
 
-                        // Now the indexer ['ReturnValue'] works correctly
-                        uint returnValue = (uint)(outParams?["ReturnValue"] ?? 1);
+                    if (matches.Count == 0) {
+                        Console.WriteLine($"[WARNING] No WMI PnP entity found matching DeviceID '{deviceId}'; cannot block.");
+                        return;
+                    }
 
-                        if (returnValue == 0) {
-                            Console.WriteLine($"[SUCCESS] Device {deviceId} has been disabled at the kernel level.");
-                        }
-                        else {
-                            Console.WriteLine($"[WARNING] Disable method returned code: {returnValue}");
+                    foreach (var device in matches) {
+                        using (device) {
+                            var outParams = (ManagementBaseObject)device.InvokeMethod("Disable", null);
+                            uint returnValue = (uint)outParams["ReturnValue"];
+
+                            if (returnValue == 0) {
+                                Console.WriteLine($"[SUCCESS] Device {deviceId} has been disabled.");
+                            }
+                            else {
+                                // Common non-zero codes: 5 = Access Denied (need admin),
+                                // 15 = Dependent services running, 22 = Not implemented for this device.
+                                Console.WriteLine($"[WARNING] Disable() returned code {returnValue} for {deviceId}.");
+                            }
                         }
                     }
                 }
             }
+            catch (ManagementException mex) {
+                Console.WriteLine($"[ERROR] WMI error while blocking device: {mex.Message}");
+            }
             catch (Exception ex) {
                 Console.WriteLine($"[ERROR] Failed to block device: {ex.Message}");
+            }
+        }
+
+        static void LogLine(string path, string line) {
+            lock (logLock) {
+                File.AppendAllText(path, line + Environment.NewLine);
             }
         }
 
