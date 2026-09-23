@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("UsbMonitorETW")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a3d76a7b754ff18a29f13762c94518971a94db40")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+125c8400706257a6de2c14519e1bda935e6e4df3")]
 [assembly: System.Reflection.AssemblyProductAttribute("UsbMonitorETW")]
 [assembly: System.Reflection.AssemblyTitleAttribute("UsbMonitorETW")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
