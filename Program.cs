@@ -106,5 +106,10 @@ namespace UsbMonitorETW
                 }
             }
         }
+
+        static void BlockDevice(string deviceId)
+        {
+
+        }
     }
 }
