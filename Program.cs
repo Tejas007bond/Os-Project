@@ -47,12 +47,13 @@ namespace UsbMonitorETW {
 
                 // Subscribe to all dynamic events from this provider
                 session.Source.Dynamic.All += data => {
-                    if (data.ID == 2003 || data.ID == 2004) {
+                    // FIX 2: Explicitly cast integers to TraceEventID
+                    if (data.ID == (TraceEventID)2003 || data.ID == (TraceEventID)2004) {
                         string deviceId = data.PayloadByName("DeviceInstanceId") as string;
                         string description = data.PayloadByName("DeviceDescription") as string;
 
                         if (!string.IsNullOrEmpty(deviceId)) {
-                            ProcessUsbEvents(deviceId, description, data.ID == 2003 ? "ADD" : "REMOVE");
+                            ProcessUsbEvents(deviceId, description, data.ID == (TraceEventID)2003 ? "ADD" : "REMOVE");
                         }
                     }
                 };
@@ -65,7 +66,7 @@ namespace UsbMonitorETW {
         static void ProcessUsbEvents(string deviceId, string description, string action) {
             string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-            // FIX 2: Added missing closing parenthesis ')' in the Regex pattern
+            // FIX 3: Added missing closing parenthesis ')' in the Regex pattern
             Match match = Regex.Match(deviceId, @"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})");
 
             if (match.Success) {
@@ -87,7 +88,7 @@ namespace UsbMonitorETW {
                         Console.WriteLine($"[!] ALERT: Unauthorized device {vidPid} detected! Blocking...");
                         File.AppendAllText(alertLogPath, $"[{timestamp}] BLOCKED: {vidPid} ({description}){Environment.NewLine}");
 
-                        // FIX 3: Changed 'BlockBuilder' to 'BlockDevice' to match the method name below
+                        // FIX 4: Changed 'BlockBuilder' to 'BlockDevice'
                         BlockDevice(deviceId);
                     }
                 }
@@ -100,8 +101,10 @@ namespace UsbMonitorETW {
                 string query = $"SELECT * FROM Win32_PnPEntity WHERE DeviceID = '{deviceId.Replace("\\", "\\\\")}'";
                 using (var searcher = new ManagementObjectSearcher(query)) {
                     foreach (ManagementObject device in searcher.Get()) {
-                        // Invoke the Disable method (Equivalent to right-click -> Disable in Device Manager)
-                        var outParams = device.InvokeMethod("Disable", null);
+                        // FIX 5: Removed ', null' to use correct method overload
+                        var outParams = device.InvokeMethod("Disable");
+
+                        // Now the indexer ['ReturnValue'] works correctly
                         uint returnValue = (uint)(outParams?["ReturnValue"] ?? 1);
 
                         if (returnValue == 0) {
