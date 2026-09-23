@@ -43,6 +43,30 @@ namespace UsbMonitorETW
             {
                 TraceEventSession.GetActiveSession(sessionName).Stop();
             }
+
+            using (var session = new TraceEventSession(sessionName))
+            {
+                // Enable the windows kernel pnp provider
+                session.EnableProvider("Microsoft-Windows-Kernel-PnP");
+
+                // Subscribe to all dynamic events from this provider
+                session.Source.Dynamic.All += data =>
+                {
+                    if (data.ID == 2003 || data.ID == 2004)
+                    {
+                        string deviceId = data.PayloadByName("DeviceInstanceId") as string;
+                        string description = data.PayloadByName("DeviceDescription") as string;
+
+                        if (!string.IsNullOrEmpty(deviceId))
+                        {
+                            ProcessUsbEvents(deviceId, description, data.ID == 2003 ? "ADD" : "REMOVE");
+                        }
+                    }
+                };
+
+                // Start processing events (blocks the main thread)
+                session.Source.Process();
+            }
         }
     }
 }
