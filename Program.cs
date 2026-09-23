@@ -36,7 +36,13 @@ namespace UsbMonitorETW
             Console.WriteLine("[*] Starting Kernel-Level USB monitor via ETW...");
             Console.WriteLine("[*] Press Ctrl+C to stop.\n");
 
+            // 3. Set up ETW session
+            string sessionName = "UsbKernelMonitorSession";
 
+            if (TraceEventSession.GetActiveSessionNames().Contains(sessionName)) // Check for any leftover session which may be crashed
+            {
+                TraceEventSession.GetActiveSession(sessionName).Stop();
+            }
         }
     }
 }
