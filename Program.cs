@@ -68,5 +68,10 @@ namespace UsbMonitorETW
                 session.Source.Process();
             }
         }
+
+        static void ProcessUsbEvent(string deviceId, string description, string action)
+        {
+            string timestamp
+        }
     }
 }
