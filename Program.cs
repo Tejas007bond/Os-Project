@@ -109,7 +109,33 @@ namespace UsbMonitorETW
 
         static void BlockDevice(string deviceId)
         {
+            try
+            {
+                // Use WMI to find the PnP entity and disable it
+                string query = $"SELECT * FROM Win32_PnPEntity WHERE DeviceID = '{deviceId.Replace("\\", "\\\\")}'";
+                using (var searcher = new ManagementObjectSearcher(query))
+                {
+                    foreach (ManagementObject device in searcher.Get())
+                    {
+                        // Invoke the Disable method (Equivalent to right-click -> Disable in Device Manager)
+                        var outParams = device.InvokeMethod("Disable", null);
+                        uint returnValue = (uint)(outParams?["ReturnValue"] ?? 1);
 
+                        if (returnValue == 0)
+                        {
+                            Console.WriteLine($"[SUCCESS] Device {deviceId} has been disabled at the kernel level.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[WARNING] Disable method returned code: {returnValue}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to block device: {ex.Message}");
+            }
         }
     }
 }
