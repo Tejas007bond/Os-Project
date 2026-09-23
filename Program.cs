@@ -5,6 +5,7 @@ using System.Management;
 using System.Text.RegularExpressions;
 using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Diagnostics.Tracing;
+using System.Reflection.Metadata;
 
 namespace UsbMonitorETW
 {
@@ -71,7 +72,39 @@ namespace UsbMonitorETW
 
         static void ProcessUsbEvent(string deviceId, string description, string action)
         {
-            string timestamp
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Extract VID and PID
+            Match match = Regex.Match(deviceId, @"VID_([0-9A-Fa-f]{4}&PID_([0-9A-Fa-f]{4})");
+
+            if(match.Success)
+            {
+                string vidPid = $"VID_{match.Groups[1].Value.ToUpper()}&PID_{match.Groups[2].Value.ToUpper()}";
+                string logEntry = $"[{timestamp}] {action} | {vidPid} | {description} | ID: {deviceId}";
+
+                // Log all events
+                File.AppendAllText(eventLogPath, logEntry + Environment.NewLine);
+                Console.WriteLine($"[LOG] {action} detected: {vidPid} ({description})");
+
+                // Only check whitelist on ADD events
+                if (action == "ADD")
+                {
+                    string[] whitelist = File.ReadAllLines(whitelistPath);
+
+                    if(whitelist.Contains(vidPid))
+                    {
+                        Console.WriteLine($"[OK] Allowed: {vidPid} is whitelisted");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[!] ALERT: Unauthorized device {vidPid} detected! Blocking...");
+                        File.AppendAllText(alertLogPath, $"[{timestamp}] BLOCKED: {vidPid} ({description}){Environment.NewLine}");
+
+                        BlockBuilder(deviceId);
+
+                    }
+                }
+            }
         }
     }
 }
