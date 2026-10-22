@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Bm1dFjAyIcQ=",
+  "dgSpecHash": "zk7psL1aPOA=",
   "success": true,
-  "projectFilePath": "D:\\Usb Logger\\UsbMonitorETW\\UsbMonitorETW\\UsbMonitorETW.csproj",
+  "projectFilePath": "D:\\Os-Project\\Os-Project\\UsbMonitorETW.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\LENOVO\\.nuget\\packages\\microsoft.diagnostics.netcore.client\\0.2.510501\\microsoft.diagnostics.netcore.client.0.2.510501.nupkg.sha512",
     "C:\\Users\\LENOVO\\.nuget\\packages\\microsoft.diagnostics.tracing.traceevent\\3.2.6\\microsoft.diagnostics.tracing.traceevent.3.2.6.nupkg.sha512",
@@ -12,7 +12,6 @@
     "C:\\Users\\LENOVO\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\6.0.0\\microsoft.extensions.logging.abstractions.6.0.0.nupkg.sha512",
     "C:\\Users\\LENOVO\\.nuget\\packages\\microsoft.extensions.options\\6.0.0\\microsoft.extensions.options.6.0.0.nupkg.sha512",
     "C:\\Users\\LENOVO\\.nuget\\packages\\microsoft.extensions.primitives\\6.0.0\\microsoft.extensions.primitives.6.0.0.nupkg.sha512",
-    "C:\\Users\\LENOVO\\.nuget\\packages\\system.codedom\\10.0.12\\system.codedom.10.0.12.nupkg.sha512",
     "C:\\Users\\LENOVO\\.nuget\\packages\\system.management\\10.0.12\\system.management.10.0.12.nupkg.sha512",
     "C:\\Users\\LENOVO\\.nuget\\packages\\system.reflection.typeextensions\\4.7.0\\system.reflection.typeextensions.4.7.0.nupkg.sha512"
   ],
